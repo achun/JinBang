@@ -147,7 +147,7 @@ const cmds = {
 			})
 
 			if (KeysSchools.length) {
-				echo('历史数据未囊括第一批和第二批次的院校 ' + KeysSchools.length)
+				echo('历史数据未囊括本科批次的院校 ' + KeysSchools.length)
 				while (true) {
 					console.log(KeysSchools.slice(0, 16).join(' '))
 					KeysSchools = KeysSchools.slice(16)
