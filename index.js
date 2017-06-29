@@ -222,7 +222,11 @@ const cmds = {
 						tr.querySelectorAll('td').forEach(function(td, i) {
 							if (i > 4) return
 							let text = td.textContent.trim()
-							row.push(i <= 1 && text || parseInt(text) || 0)
+							row.push(
+								i == 0 && text ||
+								i == 1 && normal(text) ||
+								parseInt(text) || 0
+							)
 						})
 
 						if (!row.length || !row[0]) return
@@ -391,6 +395,13 @@ function post(path, obj, onend) {
 	}
 }
 
+function normal(name) {
+	// 规范化院校名称
+	return name.replace(' ', '')
+		.replace(/（/g, '(')
+		.replace(/）/g, ')')
+}
+
 function fetchPlans(doc, done) {
 	// 抓取院校基本信息和录取计划
 	let elm = must(doc, 'td.yxdhtd'),
@@ -399,7 +410,7 @@ function fetchPlans(doc, done) {
 		url = doc.location.href;
 
 	dist['院校代号'] = code;
-	dist['院校名称'] = must(doc, 'td.yxmctd').textContent.trim();
+	dist['院校名称'] = normal(must(doc, 'td.yxmctd').textContent.trim());
 	doc.querySelectorAll('td.tdright').forEach(function(left) {
 		let name = left.textContent.trim().replace(/：|　| /g, ''),
 			right = left.nextElementSibling;
