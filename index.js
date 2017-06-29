@@ -66,39 +66,101 @@ const cmds = {
 	count: function() {
 		// 输出统计信息,
 		let total = 0,
-			duplicate = [],
-			codes = Object.keys(base.schools),
-			KeysP = Object.keys(base.provinces),
+			problem = [],
+			codes = Object.keys(base.schools).sort(),
+			KeysP = Object.keys(base.provinces).sort(),
 			KeysPC = Object.keys(base.PC),
 			KeysKL = Object.keys(base.KL),
-			KeysSchools = Object.keys(schools),
-			KeysPlans = Object.keys(plans);
+			KeysSchools = Object.keys(schools).sort(),
+			KeysPlans = Object.keys(plans).sort();
 
 		codes.forEach(function(code, i) {
 			total += base.schools[code].length
 		})
 
-		echo('provinces ' + KeysP.length)
-		echo('          ' + KeysP.join(' '))
-		if (KeysP.length != codes.length)
-			echo('NOT EQUAL ' + codes.length)
+		echo('省份\t' + KeysP.length)
+		echo('\t' + KeysP.join(' '))
+		if (KeysP.join(' ') != codes.join(' ')) {
+			echo('问题: base.schools 未囊括全部省份代号')
+			echo('\t' + codes.join(' '))
+		}
 
-		echo('PC        ' + KeysPC.length)
-		echo('KL        ' + KeysKL.length)
+		echo('批次\t' + KeysPC.length)
+		echo('科类\t' + KeysKL.length)
 
-		echo('schools   ' + total)
+		echo('院校\t' + total)
+
+		echo('更名\t' + Object.keys(history.Renamed).length)
+		echo('未招生\t' + Object.keys(history.Deprecated).length)
+
 		if (KeysSchools.length != total)
-			echo('NOT EQUAL ' + total)
+			problem.push('schools 未囊括所有 base.schools 院校')
 
-		echo('plans     ' + KeysPlans.length)
 		if (KeysPlans.length != total)
-			echo('NOT EQUAL ' + total)
+			problem.push('plans 未囊括所有 base.schools 院校')
+		if (KeysSchools.length == total && KeysPlans.length == total) {
+			KeysSchools.some(function(code, i) {
+				if (KeysPlans[i] != code) {
+					problem.push('schools 与 plans 的院校代号集合不同')
+					return true
+				}
+			})
+		}
+		total = 0
 
-		total = Object.keys(history.Renamed).length
-		if (total) echo('Renamed ' + total)
+		if (!someEach(history, function(o, code) {
+				if (code == 'Deprecated' || code == 'Renamed') return
+				if (!base.PC[code]) {
+					problem.push('历史数据中有未知批次 ' + code)
+					return true
+				}
+				return someEach(o, function(a, code) {
+						if (!base.KL[code]) {
+							problem.push('历史数据中有未知科类 ' + code)
+							return true
+						}
+						return a.some(function(a) {
+								return a.some(function(code, i) {
+									if (!i) return false
+									i = KeysPlans.indexOf(code)
+									if (i == -1) {
+										problem.push('历史数据中有未知院校 ' + code)
+										return true
+									}
 
-		total = Object.keys(history.Deprecated).length
-		if (total) echo('Deprecated ' + total)
+									if (KeysSchools[i] != code)
+										i = KeysSchools.indexOf(code)
+									if (i != -1) {
+										KeysSchools[i] = ''
+									}
+									return false
+								})
+							}) && true || null
+					}) && true || null
+			})
+		) {
+			// 历史数据囊括的院校与当前院校的差集
+			KeysSchools = KeysSchools.filter(function(code) {
+				return code != ''
+			})
+			if (KeysSchools.length) {
+				echo('历史数据未囊括院校 ' + KeysSchools.length)
+				while (true) {
+					console.log(KeysSchools.slice(0, 16).join(' '))
+					KeysSchools = KeysSchools.slice(16)
+					if (!KeysSchools.length) break
+				}
+			}
+		}
+
+		if (problem.length) {
+			echo('问题:')
+			problem.forEach(function(s) {
+				echo('\t' + s)
+			})
+			process.exit(1)
+		}
+
 	},
 	plans: function(
 		...codes // 2 省份代号或 4 位院校代号, 缺省为全部院校
