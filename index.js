@@ -34,8 +34,8 @@ const domain = 'www.heao.gov.cn',
 			PC: {
 				'本科第一批': '1',
 				'本科第二批': '2',
-				'本科第三批': '2',
-				'高职高专批': '4'
+				'本科第三批': '2'
+			// '高职高专批': '4'
 			}
 		}
 	};
@@ -139,12 +139,15 @@ const cmds = {
 					}) && true || null
 			})
 		) {
-			// 历史数据囊括的院校与当前院校的差集
+			// 第一批次和第二批次, 历史数据囊括的院校与当前院校的差集
 			KeysSchools = KeysSchools.filter(function(code) {
-				return code != ''
+				if (!code || !plans[code] ||
+					!plans[code]['1'] && !plans[code]['2']) return false
+				return true
 			})
+
 			if (KeysSchools.length) {
-				echo('历史数据未囊括院校 ' + KeysSchools.length)
+				echo('历史数据未囊括第一批和第二批次的院校 ' + KeysSchools.length)
 				while (true) {
 					console.log(KeysSchools.slice(0, 16).join(' '))
 					KeysSchools = KeysSchools.slice(16)
@@ -320,12 +323,19 @@ const cmds = {
 					error('Need to update history')
 
 				dist.sort(function(a, b) {
-					return a[0] < b[0]
+					return a[0] < b[0] && 1 || -1
 				})
 
 				step()
 			})
 		}
+	},
+	info: function() {
+		toArray(arguments).forEach(function(s) {
+			if (s.length == 4 && schools[s]) {
+				echo('[' + s + ']' + schools[s]['院校名称'])
+			}
+		})
 	}
 }
 
