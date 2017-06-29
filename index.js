@@ -47,9 +47,9 @@ const cmds = {
 	},
 	valid: function() {
 		let ok = true;
-		['./data/base.js', './data/schools.js', './data/history.js', './data/plans.js']
+		'base schools history plans fen'.split(' ')
 			.forEach(function(s) {
-				let text = fs.readFileSync(s, 'utf8');
+				let text = fs.readFileSync('./data/' + s + '.json', 'utf8');
 				if (text.indexOf('�') != -1) {
 					ok = false
 					echo('invalid � : ' + s)
