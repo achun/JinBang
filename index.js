@@ -7,10 +7,10 @@ const fs = require('fs'),
 	Buffer = require('buffer').Buffer,
 	querystring = require('querystring');
 
-const base = require('./data/base.js'),
-	schools = require('./data/schools.js'),
-	history = require('./data/history.js'),
-	plans = require('./data/plans.js');
+let base = require('./data/base.json'),
+	schools = require('./data/schools.json'),
+	history = require('./data/history.json'),
+	plans = require('./data/plans.json');
 
 /**
 provinces
@@ -27,8 +27,17 @@ const domain = 'www.heao.gov.cn',
 		default: 'http://www.heao.gov.cn/JHCX/PZ/enrollplan/default.aspx',
 		SchoolList: '/JHCX/PZ/enrollplan/SchoolList.aspx', // POST
 		PCList: 'http://www.heao.gov.cn/JHCX/PZ/enrollplan/PCList.aspx',
-		// 历史数据查询, 替换三个变量 $year, $kl, $pc
-		'2016': 'http://www.heao.gov.cn/datacenter/pages/PZTJFSD.aspx?ddlNF=$year&ddlKL=$kl&ddlPC=$pc'
+		// 历史数据查询配置, 替换三个变量 $year, $kl, $pc
+		'2016': {
+			url: 'http://www.heao.gov.cn/datacenter/pages/PZTJFSD.aspx?ddlNF=$year&ddlKL=$kl&ddlPC=$pc',
+			KL: { '文科': '1', '理科': '5' },
+			PC: {
+				'本科第一批': '1',
+				'本科第二批': '2',
+				'本科第三批': '2',
+				'高职高专批': '4'
+			}
+		}
 	};
 
 const cmds = {
@@ -51,7 +60,7 @@ const cmds = {
 	base: function() {
 		get(paths.default, function(doc) {
 			fetchBase(doc, base)
-			writeFile('./data/base.js', base)
+			writeFile('./data/base.json', base)
 		})
 	},
 	count: function() {
@@ -120,9 +129,9 @@ const cmds = {
 
 		function step() {
 			if (!hrefs.length) {
-				writeFile('./data/base.js', base)
-				writeFile('./data/schools.js', schools)
-				writeFile('./data/plans.js', plans)
+				writeFile('./data/base.json', base)
+				writeFile('./data/schools.json', schools)
+				writeFile('./data/plans.json', plans)
 				echo('done')
 				return
 			}
@@ -153,32 +162,35 @@ const cmds = {
 	history: function() {
 		// 抓取上年历史平行投档分数线
 		let year = Date.prototype.getFullYear.call(new Date()) - 1,
-			url = (paths[year] || paths['2016']).replace('$year', year),
-			kl = ['文科', '理科'],
-			pc = ['本科第一批', '本科第二批', '本科第三批', '高职高专批'],
-			hrefs = [];
+			cfg = paths[year] || paths['2016'],
+			tasks = [];
 
-		kl.forEach(function(s, i) {
-			s = url.replace('$kl', bufToQuery(iconv.encode(s, 'gbk')))
-			pc.forEach(function(v) {
-				hrefs.push(i)
-				hrefs.push(s.replace('$pc', bufToQuery(iconv.encode(v, 'gbk'))))
+		history = { }
+		someEach(cfg.PC, function(pcCode, pc) {
+			let url = cfg.url.replace('$year', year)
+				.replace('$pc', bufToQuery(iconv.encode(pc, 'gbk')))
+
+			history[pcCode] = { }
+			someEach(cfg.KL, function(klCode, kl) {
+				history[pcCode][klCode] = []
+				tasks.push(
+					[
+						pcCode, klCode,
+						url.replace('$kl', bufToQuery(iconv.encode(kl, 'gbk')))
+					]
+				)
 			})
 		})
-
-		if (base.KL['1'] != '文科综合' || base.KL['5'] != '理科综合')
-			error('Need to update history, base.KL is changed')
-
-		history['1'] = []
-		history['5'] = []
 		history.Deprecated = { }
 		history.Renamed = { }
+
 		step()
 		function step() {
-			let KL = hrefs.shift(),
+			let task = tasks.shift(),
+				dist = task && history[task[0]][task[1]],
 				total;
-			if (!hrefs.length) {
-				writeFile('./data/history.js', history)
+			if (!task) {
+				writeFile('./data/history.json', history)
 
 				total = Object.keys(history.Renamed).length
 				if (total) echo('Renamed ' + total)
@@ -189,8 +201,8 @@ const cmds = {
 				echo('done')
 				return
 			}
-			KL = KL && '5' || '1'
-			get(hrefs.shift(), function(doc) {
+
+			get(task[2], function(doc) {
 				let want = '院校代号,院校名称,计划,实际投档人数,投档最低分',
 					row,
 					keys = [];
@@ -227,12 +239,24 @@ const cmds = {
 							}
 						}
 
-						// 院校代号,计划,实际投档人数,投档最低分
-						history[KL].push([row[0], row[2], row[3], row[4]])
+						// 投档最低分, 院校代号...
+						dist.every(function(a) {
+							if (a[0] == row[4]) {
+								a.push(row[0])
+								return false
+							}
+							return true
+						}) && dist.push([row[4], row[0]])
 					}
 				)
+
 				if (!keys.length)
 					error('Need to update history')
+
+				dist.sort(function(a, b) {
+					return a[0] < b[0]
+				})
+
 				step()
 			})
 		}
@@ -248,6 +272,14 @@ function main() {
 	cmd.apply(null, args)
 }
 
+function someEach(obj, callback) {
+	let some;
+	for (let k in obj) {
+		some = callback(obj[k], k)
+		if (some != null) break
+	}
+	return some
+}
 
 function bufToQuery(buf) {
 	let s = ''
@@ -529,8 +561,7 @@ function fetchNextPagePostData(doc) {
 }
 
 function writeFile(file, obj) {
-	fs.writeFile(file,
-		'module.exports = ' + JSON.stringify(obj, null, '\t'),
+	fs.writeFile(file, JSON.stringify(obj, null, '\t'),
 		error)
 }
 
