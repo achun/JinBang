@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "河南高考数据汇总",
   "main": "index.js",
+  "scripts":{
+    "test": "node index.js count"
+  },
   "repository": "https://github.achun/JinBang",
   "author": "YU HengChun <achun.shx@qq.com>",
   "license": "Apache-2.0",

@@ -31,11 +31,11 @@ const domain = 'www.heao.gov.cn',
 		'2016': {
 			url: 'http://www.heao.gov.cn/datacenter/pages/PZTJFSD.aspx?ddlNF=$year&ddlKL=$kl&ddlPC=$pc',
 			KL: { '文科': '1', '理科': '5' },
-			PC: {
+			PC: {// 该次序应该按照分值高低排列
 				'本科第一批': '1',
 				'本科第二批': '2',
-				'本科第三批': '2'
-			// '高职高专批': '4'
+				'本科第三批': '2',
+				'高职高专批': '4'
 			}
 		}
 	};
@@ -58,143 +58,69 @@ const cmds = {
 		ok && echo('pass')
 	},
 	base: function() {
+		let codes,
+			year = Date.prototype.getFullYear.call(new Date());
+
+		base = { year: year }
 		get(paths.default, function(doc) {
 			fetchBase(doc, base)
-			writeFile('./data/base.json', base)
-		})
-	},
-	count: function() {
-		// 输出统计信息,
-		let total = 0,
-			problem = [],
-			codes = Object.keys(base.schools).sort(),
-			KeysP = Object.keys(base.provinces).sort(),
-			KeysPC = Object.keys(base.PC),
-			KeysKL = Object.keys(base.KL),
-			KeysSchools = Object.keys(schools).sort(),
-			KeysPlans = Object.keys(plans).sort();
-
-		codes.forEach(function(code, i) {
-			total += base.schools[code].length
+			codes = Object.keys(base.provinces);
+			if (codes && codes.length) {
+				base.schools = { }
+				list()
+			} else error('未获取省市列表')
 		})
 
-		echo('省份\t' + KeysP.length)
-		echo('\t' + KeysP.join(' '))
-		if (KeysP.join(' ') != codes.join(' ')) {
-			echo('问题: base.schools 未囊括全部省份代号')
-			echo('\t' + codes.join(' '))
-		}
-
-		echo('批次\t' + KeysPC.length)
-		echo('科类\t' + KeysKL.length)
-
-		echo('院校\t' + total)
-
-		echo('更名\t' + Object.keys(history.Renamed).length)
-		echo('未招生\t' + Object.keys(history.Deprecated).length)
-
-		if (KeysSchools.length != total)
-			problem.push('schools 未囊括所有 base.schools 院校')
-
-		if (KeysPlans.length != total)
-			problem.push('plans 未囊括所有 base.schools 院校')
-		if (KeysSchools.length == total && KeysPlans.length == total) {
-			KeysSchools.some(function(code, i) {
-				if (KeysPlans[i] != code) {
-					problem.push('schools 与 plans 的院校代号集合不同')
-					return true
-				}
-			})
-		}
-		total = 0
-
-		if (!someEach(history, function(o, code) {
-				if (code == 'Deprecated' || code == 'Renamed') return
-				if (!base.PC[code]) {
-					problem.push('历史数据中有未知批次 ' + code)
-					return true
-				}
-				return someEach(o, function(a, code) {
-						if (!base.KL[code]) {
-							problem.push('历史数据中有未知科类 ' + code)
-							return true
-						}
-						return a.some(function(a) {
-								return a.some(function(code, i) {
-									if (!i) return false
-									i = KeysPlans.indexOf(code)
-									if (i == -1) {
-										problem.push('历史数据中有未知院校 ' + code)
-										return true
-									}
-
-									if (KeysSchools[i] != code)
-										i = KeysSchools.indexOf(code)
-									if (i != -1) {
-										KeysSchools[i] = ''
-									}
-									return false
-								})
-							}) && true || null
-					}) && true || null
-			})
-		) {
-			// 第一批次和第二批次, 历史数据囊括的院校与当前院校的差集
-			KeysSchools = KeysSchools.filter(function(code) {
-				if (!code || !plans[code] ||
-					!plans[code]['1'] && !plans[code]['2']) return false
-				return true
-			})
-
-			if (KeysSchools.length) {
-				echo('历史数据未囊括本科批次的院校 ' + KeysSchools.length)
-				while (true) {
-					console.log(KeysSchools.slice(0, 16).join(' '))
-					KeysSchools = KeysSchools.slice(16)
-					if (!KeysSchools.length) break
-				}
+		// 按照省市抓取院校列表
+		function list() {
+			let dist,
+				province = codes.shift();
+			if (!province) {
+				writeFile('./data/base.json', base)
+				return
 			}
-		}
+			dist = base.schools[province] = [];
 
-		if (problem.length) {
-			echo('问题:')
-			problem.forEach(function(s) {
-				echo('\t' + s)
+			fetchFirstPageDoc(province, function(doc) {
+				walkSchoolsList(doc, function(doc) {
+					doc.querySelectorAll('li.SchoolList a').forEach(
+						function(elm) {
+							let code = elm.href.split('=').pop()
+							if (dist.indexOf(code) != -1)
+								error('重复的院校代号 ' + province + ':' + code)
+							else dist.push(code)
+						})
+				}, list)
 			})
-			process.exit(1)
 		}
-
 	},
 	plans: function(
-		...codes // 2 省份代号或 4 位院校代号, 缺省为全部院校
+		...codes // 4 位院校代号, 缺省为全部院校
 	) {
 
 		let hrefs = [];
-		base.schools = base.schools || { }
 
-		if (!codes.length) {
-			codes = Object.keys(base.provinces);
-			list()
-		} else if (codes[0].length == 2) {
-			codes.forEach(function(code) {
-				if (!base.provinces[code])
-					error('undefined province ' + code)
+		if (!arguments.length) {
+			plans = { }
+			fetchFirstPageDoc(-1, function(doc) {
+				walkSchoolsList(doc, function(doc) {
+					doc.querySelectorAll('li.SchoolList a').forEach(
+						function(elm) {
+							hrefs.push(elm.href)
+						})
+				}, step)
 			})
-			list()
-		} else if (codes[0].length == 4) {
-			codes.forEach(function(code) {
-				if (code.length != 4)
-					error('invalid YXDH ' + code)
-				hrefs.push(paths.PCList + '?YXDH=' + code)
+
+		} else {
+			hrefs = toArray(arguments).map(function(code) {
+				if (code.length != 4) error('院校代号必须为四位')
+				paths.PCList + '?YXDH=' + code
 			})
 			step()
-		} else {
-			cmds.help()
 		}
 
 		function step() {
 			if (!hrefs.length) {
-				writeFile('./data/base.json', base)
 				writeFile('./data/schools.json', schools)
 				writeFile('./data/plans.json', plans)
 				echo('done')
@@ -205,27 +131,106 @@ const cmds = {
 				fetchPlans(doc, step)
 			})
 		}
+	},
+	count: function() {
+		// 输出统计信息,
+		let total = 0,
+			problem = [],
+			codes = base.schools && Object.keys(base.schools).sort(),
+			KeysP = Object.keys(base.provinces).sort(),
+			KeysPC = Object.keys(base.PC),
+			KeysKL = Object.keys(base.KL),
+			KeysSchools = Object.keys(schools).sort(),
+			KeysPlans = Object.keys(plans).sort();
 
-		// 按照省份抓取院校列表
-		function list() {
-			let dist,
-				province = codes.shift()
-			if (!province) {
-				step()
-				return
+		codes && codes.forEach(function(code, i) {
+			total += base.schools[code].length
+		})
+		echo('年份\t' + base.year)
+		echo('省市\t' + KeysP.length)
+		echo('\t' + KeysP.join(' '))
+
+		echo('批次\t' + KeysPC.length)
+		echo('科类\t' + KeysKL.length)
+
+		echo('院校\t' + KeysPlans.length + ', 省市 ' + total)
+
+		echo('更名\t' + Object.keys(history.renamed).length)
+		echo('无计划\t' + Object.keys(history.planless).length)
+
+		if (!codes)
+			problem.push('base.schools 缺失, 需要更新 plans')
+		else {
+
+			if (KeysP.join(' ') != codes.join(' ')) {
+				problem.push('base.schools 未囊括的省市代号')
+				problem.push(codes.join(' '))
 			}
 
-			dist = base.schools[province] = []
-			walkSchoolsList(province, function(doc) {
-				schoolsCodeHref(doc, function(code, href) {
-					hrefs.push(href)
-					dist.push(code)
-				})
-			}, list)
+			if (KeysPlans.length != KeysSchools.length)
+				problem.push('schools 院校数为 ' + KeysSchools.length)
 		}
+		total = 0
+		let pcs = [],
+			kls = [],
+			xys = [];
+		KeysPlans = [] // 复用, 表示未囊括的院校
+		someEach(history, function(o, pc) {
+			if (!parseInt(pc)) return
+			if (!base.PC[pc]) {
+				pcs.push(pc)
+				return
+			}
+			someEach(o, function(a, kl) {
+				if (!base.KL[kl]) {
+					kls.indexOf(kl) == -1 && kls.push(kl)
+					return
+				}
+				a.forEach(function(a) {
+					a.forEach(function(code, i) {
+						if (!i) return
+						if (!plans[code]) {
+							xys.indexOf(code) == -1 && xys.push(code)
+							return
+						}
+
+						(!plans[code][pc] || !plans[code][pc][kl]) &&
+						KeysPlans.indexOf(code) == -1 &&
+						KeysPlans.push(code)
+
+						return
+					})
+				})
+			})
+		})
+
+		if (KeysPlans.length) {
+			echo('历史数据未囊括的院校 ' + KeysPlans.length)
+			while (true) {
+				console.log(KeysPlans.slice(0, 16).join(' '))
+				KeysPlans = KeysPlans.slice(16)
+				if (!KeysPlans.length) break
+			}
+		}
+
+		if (pcs.length)
+			problem.push('历史数据中有未知批次 ' + pcs.join(' '))
+		if (kls.length)
+			problem.push('历史数据中有未知科类 ' + kls.join(' '))
+		if (xys.length)
+			problem.push('历史数据中有未知院校 ' + xys.join(' '))
+
+		if (problem.length) {
+			echo('问题:')
+			problem.forEach(function(s) {
+				echo('\t' + s)
+			})
+			process.exit(1)
+		}
+
 	},
 	history: function() {
-		// 抓取上年历史平行投档分数线
+		// 抓取上年平行投档分数线, 合并到 plans.json
 		let year = Date.prototype.getFullYear.call(new Date()) - 1,
 			cfg = paths[year] || paths['2016'],
 			tasks = [];
@@ -246,22 +251,27 @@ const cmds = {
 				)
 			})
 		})
-		history.Deprecated = { }
-		history.Renamed = { }
+		history.planless = { }
+		history.renamed = { }
 
 		step()
 		function step() {
 			let task = tasks.shift(),
-				dist = task && history[task[0]][task[1]],
+				PC = task && task[0],
+				KL = task && task[1],
+				dist = task && history[PC][KL],
+				ignore = task && PC != '1' && PC != '2',
+				// 非本科批次变动较大, 不计算 planless
 				total;
 			if (!task) {
+				writeFile('./data/plans.json', plans)
 				writeFile('./data/history.json', history)
 
-				total = Object.keys(history.Renamed).length
-				if (total) echo('Renamed ' + total)
+				total = Object.keys(history.renamed).length
+				if (total) echo('更名 ' + total)
 
-				total = Object.keys(history.Deprecated).length
-				if (total) echo('Deprecated ' + total)
+				total = Object.keys(history.planless).length
+				if (total) echo('无计划  ' + total)
 
 				echo('done')
 				return
@@ -296,8 +306,12 @@ const cmds = {
 
 						if (!row.length || !row[0]) return
 
-						if (!schools[row[0]]) {
-							history.Deprecated[row[0]] = row[1]
+						if (plans[row[0]] &&
+							plans[row[0]][PC] && plans[row[0]][PC][KL]) {
+							plans[row[0]][PC][KL].history = row[4]
+						} else {
+							if (!ignore)
+								history.planless[row[0]] = row[1]
 							return
 						}
 
@@ -330,11 +344,42 @@ const cmds = {
 			})
 		}
 	},
-	info: function() {
+	name: function() {
+		// 根据四位院校代码输出院校名称
 		toArray(arguments).forEach(function(s) {
 			if (s.length == 4 && schools[s]) {
 				echo('[' + s + ']' + schools[s]['院校名称'])
 			}
+		})
+	},
+	rank: rank, // 按科类生成志愿填报排行
+	hope: function(
+		kl,    // 科类代码
+		actual // 总分
+	) {
+		// 输出科类(kl) 和总分(fen) 在 rank.json 中上下 10 档(分)的院校
+		let h = actual,
+			rank = require('./data/rank.json')[kl];
+		if (!rank) error('未定义科类代号 ' + kl)
+
+		h = search(rank, function(a) {
+			return a[0] > h && 1 || a[0] < h && -1 || 0
+		})
+
+		let i = h && h - 10 || h,
+			j = h && h + 10 || h;
+		if (i < 0)
+			i = 0;
+		if (j > rank.length)
+			j = rank.length;
+
+		rank.slice(i, j).forEach(function(a) {
+			echo(a[0] + '\t' + a[1])
+			a.forEach(function(code, i) {
+				if (i < 2) return
+				echo('\t' + paths.PCList + '?YXDH=' + code + ' ' +
+					(schools[code] && schools[code]['院校名称'] || ''))
+			})
 		})
 	}
 }
@@ -357,6 +402,58 @@ function someEach(obj, callback) {
 	return some
 }
 
+function rank() {
+	// 按科类生成志愿填报排行
+	let fen = require('./data/fen.json');
+	Object.keys(fen).forEach(function(kl) {
+		let top = fen[kl],
+			min = top[top.length - 1][0];
+
+		// 从所有历史批次中选出分值范围内的院校
+		someEach(history, function(o, pc) {
+			if (!parseInt(pc)) return
+			someEach(o, function(a, k) {
+				if (k != kl) return
+				a.some(function(a, i) {
+					i = a[0]
+					if (i < min) return true
+					// 先按分数段挑出院校
+					// 因为去年的批次不一定和今年一样
+					i = search(top, function(a) {
+						return a[0] > i && 1 || a[0] < i && -1 || 0
+					})
+
+					a.forEach(function(code, i) {
+						if (i && this.indexOf(code, 2) == -1)
+							this.push(code)
+					}, top[i])
+				})
+			})
+		})
+		fen[kl] = top.filter(function(a) {
+			return a.length > 2
+		})
+	})
+	writeFile('./data/rank.json', fen)
+}
+
+function search(a, dir) {
+	// 二分法搜索数组
+	let i = 0,
+		j = a.length;
+	if (!j) return -1
+	while (true) {
+		let h = i + ((j - i) >> 1),
+			k = dir(a[h]);
+		if (!k || i >= j) return h
+		if (k == -1) {
+			j = h - 1
+		} else {
+			i = h + 1
+		}
+	}
+}
+
 function bufToQuery(buf) {
 	let s = ''
 	for (const v of buf.values()) {
@@ -367,7 +464,7 @@ function bufToQuery(buf) {
 
 function get(url, onend) {
 	let retry = 3;
-	echo(url)
+	echo('GET ' + url)
 	run()
 	function run() {
 		http.get(url, function(res) {
@@ -425,7 +522,7 @@ function post(path, obj, onend) {
 			}
 		};
 
-	echo('post: ' + url)
+	echo('POST ' + url + ' : ' + postData)
 	run()
 	function run() {
 		let req = http.request(opt, function ready(res) {
@@ -598,7 +695,7 @@ function mustNextElementSibling(left, clas, url) {
 }
 
 function fetchBase(doc, dist) {
-	// 解析省份, 批次, 科类代码
+	// 解析省市, 批次, 科类代码
 	let nl = doc.querySelectorAll('#DDLProvince option');
 	dist.provinces = { }
 	nl.forEach(function(elm, i) {
@@ -648,34 +745,35 @@ function writeFile(file, obj) {
 		error)
 }
 
-function walkSchoolsList(
-	provice, // 省份代号
-	callback, // 处理每一页的回调函数
-	done // 全部完成时的回调函数
+function fetchFirstPageDoc(
+	provice, // 省市代号, -1 为全部
+	callback // 处理每一页的回调函数
 ) {
 	// 遍历某省院校列表
 	let data = {
 		DDLProvince: provice,
-		ddlQuery: "",
-		ddlKLDM: "",
+		ddlQuery: "-",
+		ddlKLDM: "-",
 		txtyxmc: "",
 		txtzymc: "",
 		"Imgbtnpro.x": parseInt(Math.random() * 100 % 36 + 1),
 		"Imgbtnpro.y": parseInt(Math.random() * 100 % 10 + 1)
 	};
-	// 第一页的 POST 数据是特别的
-	post(paths.SchoolList, data, function(doc) {
-		callback(doc);
-		if (hasNextPage(doc)) next(doc);
-		else done()
-	})
+	post(paths.SchoolList, data, callback)
+}
 
+function walkSchoolsList(
+	doc, // 当前的 document
+	callback, // 处理每一页的回调函数, 会被首先执行
+	done // 全部完成时的回调函数
+) {
+	next(doc)
+	// 遍历院校列表
 	function next(doc) {
-		post(paths.SchoolList, fetchNextPagePostData(doc), function(doc) {
-			callback(doc);
-			if (hasNextPage(doc)) next(doc);
-			else done()
-		})
+		callback(doc);
+		if (!hasNextPage(doc))
+			return done()
+		post(paths.SchoolList, fetchNextPagePostData(doc), next)
 	}
 }
 
