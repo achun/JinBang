@@ -228,6 +228,15 @@ const cmds = {
 			process.exit(1)
 		}
 
+		let fen = require('./data/fen.json')
+		echo()
+		echo('考生')
+
+		someEach(fen, function(a, kl) {
+			let sum = a.pop()[1]
+			echo(`	${sum}	[${kl}]${base.KL[kl]}`)
+		})
+
 		let plan = require('./data/total.json')
 		echo()
 		echo(`计划	${plan.total}`)
