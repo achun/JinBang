@@ -112,9 +112,9 @@ const cmds = {
 			})
 
 		} else {
-			hrefs = toArray(arguments).map(function(code) {
+			hrefs = codes.map(function(code) {
 				if (code.length != 4) error('院校代号必须为四位')
-				paths.PCList + '?YXDH=' + code
+				return paths.PCList + '?YXDH=' + code
 			})
 			step()
 		}
@@ -228,6 +228,53 @@ const cmds = {
 			process.exit(1)
 		}
 
+		let plan = require('./data/total.json')
+		echo()
+		echo(`计划	${plan.total}`)
+
+		someEach(plan, function(o, pc) {
+			if (pc == 'total') return
+			echo()
+			echo(`	${o.total}		[${pc}]${base.PC[pc]}`)
+			echo()
+			someEach(o, function(total, kl) {
+				if (kl == 'total') return
+				echo(`		${total}	[${kl}]${base.KL[kl]}`)
+			})
+		})
+	},
+	total: function() {
+		// 分批次, 科类统计招生计划并保存到 data/total.json
+		let plan = { total: 0 }
+		someEach(plans, function(o, yxdh) {
+			let total = 0;
+
+			someEach(o, function(o, pc) {
+				if ('total' == pc) {
+					total += o
+					return
+				}
+				if (!this[pc])
+					this[pc] = { total: 0 }
+
+				someEach(o, function(o, kl) {
+					if ('total' == kl) {
+						this.total += o
+						return
+					}
+					if (this[kl] == null)
+						this[kl] = 0
+					this[kl] += o.total
+
+				}, this[pc])
+
+			}, this) // this === plan
+
+			if (total != o.total)
+				error(`合计错误: [${yxdh}]院校 ${o.total}/${total}`)
+			this.total += total
+		}, plan)
+		writeFile('./data/total.json', plan)
 	},
 	history: function() {
 		// 抓取上年平行投档分数线, 合并到 plans.json
@@ -344,9 +391,9 @@ const cmds = {
 			})
 		}
 	},
-	name: function() {
+	name: function(...codes) {
 		// 根据四位院校代码输出院校名称
-		toArray(arguments).forEach(function(s) {
+		codes.forEach(function(s) {
 			if (s.length == 4 && schools[s]) {
 				echo('[' + s + ']' + schools[s]['院校名称'])
 			}
@@ -393,10 +440,10 @@ function main() {
 	cmd.apply(null, args)
 }
 
-function someEach(obj, callback) {
+function someEach(obj, callback, thisArg) {
 	let some;
 	for (let k in obj) {
-		some = callback(obj[k], k)
+		some = callback.call(thisArg, obj[k], k)
 		if (some != null) break
 	}
 	return some
@@ -572,7 +619,7 @@ function normal(name) {
 }
 
 function fetchPlans(doc, done) {
-	// 抓取院校基本信息和录取计划
+	// 非增量抓取, 每次都被清零, 抓取院校基本信息和录取计划
 	let elm = must(doc, 'td.yxdhtd'),
 		code = elm.textContent.trim(),
 		dist = schools[code] = schools[code] || { },
@@ -589,7 +636,7 @@ function fetchPlans(doc, done) {
 		this[name] = left && left.href || right.textContent.trim()
 	}, dist)
 
-	dist = plans[code] = plans[code] || { }
+	dist = plans[code] = { total: 0 }
 
 	let hrefs = [];
 
@@ -613,66 +660,87 @@ function fetchPlans(doc, done) {
 
 	function run() {
 		let href = hrefs.shift()
-		if (!href)
+		if (!href) {
 			done()
-		else get(href, function(doc) {
+		} else get(href, function(doc) {
 				fetchPCContend(doc, dist)
 				run()
 			})
 	}
 }
 
+function queryToObj(href, obj) {
+	let key;
+	obj = obj || { }
+	href.split(/[?=&]/).forEach(function(s, i) {
+		if (!i) return
+		if (!key) {
+			key = s
+		} else {
+			obj[key] = s
+			key = ''
+		}
+	})
+	return obj
+}
+
 function fetchPCContend(doc, dist) {
 	// 该页面是同一个批次的
-	let pc,
-		sum = 0,
-		url = doc.location.href;
+	let sum = 0, // 批次计划总数
+		url = doc.location.href,
+		pc = queryToObj(url).PC;
+	if (!pc) error('undefined PC in URL ' + url)
+	if (!dist[pc]) error('undefined dist[pc] for URL ' + url)
+
+	toArray(doc.querySelectorAll('td.pcyxdh')).some(function(elm) {
+		if (elm.textContent.trim().startsWith('计划总数')) {
+			elm = mustNextElementSibling(elm, 'pcyxmctd', url)
+			sum = parseInt(elm.textContent.trim()) || 0
+			return true
+		}
+	})
+
+	if (dist[pc].total != sum)
+		error(`计划总数不符: 上级页面计划招生人数 ${dist[pc].total} 与内页 ${sum} ${url}`)
+
+	dist[pc].total = 0
+
 	doc.querySelectorAll('td.planListTD:nth-child(1)').forEach(function(elm) {
 		let a = must(elm, 'a'),
 			cat = mustNextElementSibling(elm, 'tdpcjhrs', url),
 			total = mustNextElementSibling(cat, 'tdpcjhrs', url),
 			note = mustNextElementSibling(total, 'planListTD', url),
-			key ,
-			dist,
-			args = { };
-		a.href.split(/[?=&]/).forEach(function(s, i) {
-			if (!i) return
-			if (!key) {
-				key = s
-			} else {
-				args[key] = s
-				key = ''
-			}
-		}, args)
+			args = queryToObj(a.href);
 
-		dist = this[args.PC]// PC->KL->ZY->{}
-		if (!dist || !args.PC || !args.ZY || !args.KL ||
+		// PC->KL->ZY->{}
+		if (!args.PC || !args.KL || !args.ZY ||
 			!base.PC[args.PC] || !base.KL[args.KL] ||
-			pc && pc != args.PC)
-			error('invalid arguments of plan ' + JSON.stringify(args))
+			pc != args.PC)
+			error('invalid query arguments ' + JSON.stringify(args) + ' of plan ' + url)
 
-		pc = args.PC
+		if (!this[args.KL])
+			this[args.KL] = { total: 0 }
 
-		if (!dist[args.KL])
-			dist[args.KL] = { total: 0 }
+		let dist = this[args.KL]
+		if (dist[args.ZY])
+			error(`专业重复: [${args.ZY}] of plan ${url}`)
 
-		dist[args.KL][args.ZY] = {
+		dist[args.ZY] = {
 			total: parseInt(total.textContent.trim()) || 0, // 有计划为 0
 			name: a.textContent,
 			href: a.href,
 			note: note.textContent.trim()
 		}
 
-		dist[args.KL].total += dist[args.KL][args.ZY].total
+		dist.total += dist[args.ZY].total
+		this.total += dist[args.ZY].total
 
-		sum += dist[args.KL][args.ZY].total
-	}, dist)
+	}, dist[pc])
 
-	if (dist[pc].total != sum) {
-		echo(dist)
-		error('plan(' + dist[pc].total + ') and total(' + sum + ') values are not equal. ' +
-			doc.location.href)
-	}
+	if (dist[pc].total != sum)
+		error(`计划总数不符: 计算总数 ${dist[pc].total} 与页面计划总数 ${sum} ${url}`)
+
+	dist.total += sum
 }
 
 function fixHrefToMarkDown(elm) {
@@ -791,9 +859,12 @@ function toArray(obj) {
 }
 
 function echo(obj) {
-	console.log(
-		typeof obj == 'string' && obj ||
-		JSON.stringify(obj, null, '\t')
+	if (!arguments.length)
+		console.log('')
+	else
+		console.log(
+			typeof obj == 'string' && obj ||
+			JSON.stringify(obj, null, '\t')
 	)
 }
 

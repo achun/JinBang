@@ -14,6 +14,8 @@ Command
 
   valid          备用, 简单的检查非法 UTF-8 编码字符 � . 原因不明.
 
+  total          分批次, 科类统计生成招生计划 (data/total.json)
+
   count          输出当前数据统计信息, 可辅助排错
 
   name  <N...>   根据四位院校代号输出院校名称
