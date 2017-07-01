@@ -5,10 +5,12 @@ const fs = require('fs'),
 	http = require('http'),
 	JSDOM = require('jsdom').JSDOM,
 	Buffer = require('buffer').Buffer,
-	querystring = require('querystring');
+	querystring = require('querystring'),
+	common = require('./lib/common'),
+	{search, school, hope} = common;
 
-let base = require('./data/base.json'),
-	schools = require('./data/schools.json'),
+
+let {base, schools, fen, rank} = common,
 	history = require('./data/history.json'),
 	plans = require('./data/plans.json');
 
@@ -228,7 +230,6 @@ const cmds = {
 			process.exit(1)
 		}
 
-		let fen = require('./data/fen.json')
 		echo()
 		echo('考生')
 
@@ -315,6 +316,13 @@ const cmds = {
 				error(`合计错误: [${yxdh}]院校 ${o.total}/${total}`)
 			this.total += total
 		}, plan)
+
+		someEach(zero, function(o) {
+			someEach(o, function(a) {
+				a.sort()
+			})
+		})
+
 		plan.zero = zero;
 		writeFile('./data/total.json', plan)
 	},
@@ -435,34 +443,23 @@ const cmds = {
 	},
 	name: function(...codes) {
 		// 根据四位院校代码输出院校名称
-		codes.forEach(function(s) {
-			if (s.length == 4 && schools[s]) {
-				echo('[' + s + ']' + schools[s]['院校名称'])
+		school(schools, codes, function(s, obj) {
+			if (obj) {
+				echo('[' + s + ']' + obj['院校名称'] +
+					' ' + paths.PCList + '?YXDH=' + s)
 			}
 		})
 	},
-	rank: rank, // 按科类生成志愿填报排行
+	rank: genRank, // 按科类生成志愿填报排行
 	hope: function(
 		kl,    // 科类代码
 		actual // 总分
 	) {
 		// 输出科类(kl) 和总分(fen) 在 rank.json 中上下 10 档(分)的院校
-		let h = actual,
-			rank = require('./data/rank.json')[kl];
-		if (!rank) error('未定义科类代号 ' + kl)
 
-		h = search(rank, function(a) {
-			return a[0] > h && 1 || a[0] < h && -1 || 0
-		})
-
-		let i = h && h - 10 || h,
-			j = h && h + 10 || h;
-		if (i < 0)
-			i = 0;
-		if (j > rank.length)
-			j = rank.length;
-
-		rank.slice(i, j).forEach(function(a) {
+		let rank = hope(kl, actual);
+		if (!rank) error('未定义科类代号 ' + kl);
+		rank.forEach(function(a) {
 			echo(a[0] + '\t' + a[1])
 			a.forEach(function(code, i) {
 				if (i < 2) return
@@ -491,7 +488,7 @@ function someEach(obj, callback, thisArg) {
 	return some
 }
 
-function rank() {
+function genRank() {
 	// 按科类生成志愿填报排行
 	let fen = require('./data/fen.json');
 	Object.keys(fen).forEach(function(kl) {
@@ -524,23 +521,6 @@ function rank() {
 		})
 	})
 	writeFile('./data/rank.json', fen)
-}
-
-function search(a, dir) {
-	// 二分法搜索数组
-	let i = 0,
-		j = a.length;
-	if (!j) return -1
-	while (true) {
-		let h = i + ((j - i) >> 1),
-			k = dir(a[h]);
-		if (!k || i >= j) return h
-		if (k == -1) {
-			j = h - 1
-		} else {
-			i = h + 1
-		}
-	}
 }
 
 function bufToQuery(buf) {
