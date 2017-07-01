@@ -242,7 +242,8 @@ const cmds = {
 		echo(`计划	${plan.total}`)
 
 		someEach(plan, function(o, pc) {
-			if (pc == 'total') return
+			if (pc == 'total' || pc == 'zero') return
+
 			echo()
 			echo(`	${o.total}		[${pc}]${base.PC[pc]}`)
 			echo()
@@ -251,10 +252,27 @@ const cmds = {
 				echo(`		${total}	[${kl}]${base.KL[kl]}`)
 			})
 		})
+
+		echo()
+		echo(`零计划院校代号`)
+		someEach(plan.zero, function(o, pc) {
+			echo()
+			echo(`	[${pc}]${base.PC[pc]}`)
+			echo()
+			someEach(o, function(a, kl) {
+				echo(`		[${kl}]${base.KL[kl]}`)
+				while (a.length) {
+					echo('		' + a.slice(0, 10).join(' '))
+					a = a.slice(10)
+				}
+			})
+		})
+
 	},
 	total: function() {
 		// 分批次, 科类统计招生计划并保存到 data/total.json
-		let plan = { total: 0 }
+		let plan = { total: 0 },
+			zero = { };
 		someEach(plans, function(o, yxdh) {
 			let total = 0;
 
@@ -265,6 +283,20 @@ const cmds = {
 				}
 				if (!this[pc])
 					this[pc] = { total: 0 }
+
+				if (o.total == 0) {
+					zero[pc] = zero[pc] || { }
+					someEach(o, function(o, kl) {
+						if ('total' == kl) return
+
+						zero[pc][kl] = zero[pc][kl] || []
+
+						if (zero[pc][kl].indexOf(yxdh) == -1)
+							zero[pc][kl].push(yxdh)
+
+					}, this[pc])
+					return
+				}
 
 				someEach(o, function(o, kl) {
 					if ('total' == kl) {
@@ -283,6 +315,7 @@ const cmds = {
 				error(`合计错误: [${yxdh}]院校 ${o.total}/${total}`)
 			this.total += total
 		}, plan)
+		plan.zero = zero;
 		writeFile('./data/total.json', plan)
 	},
 	history: function() {
