@@ -4,22 +4,22 @@ Usage
 
 Command
 
-  help           显示此帮助信息
+  help               显示此帮助信息
 
-  base           抓取基本信息, 如果是新一年, 这应该是第一个要执行的
+  base               抓取基本信息, 如果是新一年, 这应该是第一个要执行的
 
-  plans [N...]   抓取高考招生计划, 参数为四位院校代号, 缺省为全部院校
+  plans [N...]       抓取高考招生计划, 参数为四位院校代号, 缺省为全部院校
 
-  history        抓取上年平行投档线
+  history            抓取上年平行投档线
 
-  valid          备用, 简单的检查非法 UTF-8 编码字符 � . 原因不明.
+  valid              备用, 简单的检查非法 UTF-8 编码字符 � . 原因不明.
 
-  total          分批次, 科类统计生成招生计划 (data/total.json)
+  total              分批次, 科类统计生成招生计划 (data/total.json)
 
-  count          输出当前数据统计信息, 可辅助排错
+  count              输出当前数据统计信息, 可辅助排错
 
-  name  <N...>   根据四位院校代号输出院校名称
+  plan <pc kl N>     输出指定批次 pc 科类 kl 和院校(四位代码)的招生计划概要
 
-  rank           按科类生成志愿填报排行 (data/rank.json)
+  rank               按科类生成志愿填报排行 (data/rank.json)
 
-  hope <kl, fen> 输出科类(kl) 和总分(fen) 在 rank.json 中上下 10 档(分)的院校
+  hope <pc kl fen N> 输出批次,科类和总分(fen) 在 rank.json 中上下 N 档(分)的院校

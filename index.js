@@ -10,7 +10,7 @@ const fs = require('fs'),
 	{search, school, hope} = common;
 
 
-let {base, schools, fen, rank} = common,
+let {base, schools, totals, rank} = common,
 	history = require('./data/history.json'),
 	plans = require('./data/plans.json');
 
@@ -150,7 +150,7 @@ const cmds = {
 		})
 		echo('年份\t' + base.year)
 		echo('省市\t' + KeysP.length)
-		echo('\t' + KeysP.join(' '))
+		// echo('\t' + KeysP.join(' '))
 
 		echo('批次\t' + KeysPC.length)
 		echo('科类\t' + KeysKL.length)
@@ -189,19 +189,15 @@ const cmds = {
 					return
 				}
 				a.forEach(function(a) {
-					a.forEach(function(code, i) {
-						if (!i) return
-						if (!plans[code]) {
-							xys.indexOf(code) == -1 && xys.push(code)
-							return
-						}
+					let code = a[1];
 
+					if (!plans[code])
+						xys.indexOf(code) == -1 && xys.push(code)
+					else
 						(!plans[code][pc] || !plans[code][pc][kl]) &&
 						KeysPlans.indexOf(code) == -1 &&
 						KeysPlans.push(code)
 
-						return
-					})
 				})
 			})
 		})
@@ -230,15 +226,39 @@ const cmds = {
 			process.exit(1)
 		}
 
+		let xian = require('./data/shengkong.json');
+		let fen = require('./data/fen.json');
 		echo()
-		echo('考生')
-
-		someEach(fen, function(a, kl) {
-			let sum = a.pop()[1]
-			echo(`	${sum}	[${kl}]${base.KL[kl]}`)
+		echo(`省控线`)
+		someEach(xian, function(o, pc) {
+			echo()
+			echo(`[${pc}]${base.PC[pc]}`)
+			someEach(o, function(v, kl) {
+				echo(`	${v}	[${kl}]${base.KL[kl]}`)
+				if (fen[kl]) {
+					v = search(fen[kl], function(a) {
+						return a[0] - v
+					})
+					this[kl] = fen[kl][v][1]
+				}
+			}, o)
 		})
 
-		let plan = require('./data/total.json')
+		echo()
+		echo('考生省控线分段(非累计)')
+		xian['2']['1'] -= xian['1']['1']
+		xian['2']['5'] -= xian['1']['5']
+		someEach(xian, function(o, pc) {
+			echo()
+			echo(`[${pc}]${base.PC[pc]}`)
+			someEach(o, function(v, kl) {
+				echo(`	${v}	[${kl}]${base.KL[kl]}`)
+			})
+		})
+
+		echoPredict(rank)
+
+		let plan = totals;
 		echo()
 		echo(`计划	${plan.total}`)
 
@@ -268,7 +288,6 @@ const cmds = {
 				}
 			})
 		})
-
 	},
 	total: function() {
 		// 分批次, 科类统计招生计划并保存到 data/total.json
@@ -285,30 +304,24 @@ const cmds = {
 				if (!this[pc])
 					this[pc] = { total: 0 }
 
+				this[pc].total += o.total
+
 				if (o.total == 0) {
 					zero[pc] = zero[pc] || { }
 					someEach(o, function(o, kl) {
 						if ('total' == kl) return
 
-						zero[pc][kl] = zero[pc][kl] || []
+						this[kl] = this[kl] || []
 
-						if (zero[pc][kl].indexOf(yxdh) == -1)
-							zero[pc][kl].push(yxdh)
-
+						if (this[kl].indexOf(yxdh) == -1)
+							this[kl].push(yxdh)
+					}, zero[pc])
+				} else {
+					someEach(o, function(o, kl) {
+						if ('total' == kl) return
+						this[kl] = (this[kl] || 0) + o.total
 					}, this[pc])
-					return
 				}
-
-				someEach(o, function(o, kl) {
-					if ('total' == kl) {
-						this.total += o
-						return
-					}
-					if (this[kl] == null)
-						this[kl] = 0
-					this[kl] += o.total
-
-				}, this[pc])
 
 			}, this) // this === plan
 
@@ -327,10 +340,16 @@ const cmds = {
 		writeFile('./data/total.json', plan)
 	},
 	history: function() {
-		// 抓取上年平行投档分数线, 合并到 plans.json
-		let year = Date.prototype.getFullYear.call(new Date()) - 1,
+		// 抓取上年平行投档分数线到 history.json
+		let year = base.year - 1,
 			cfg = paths[year] || paths['2016'],
+			want = '院校代号,院校名称,计划,实际投档人数,投档最低分',
 			tasks = [];
+		if (base.PC["1"] != '本科一批' || base.PC["2"] != '本科二批' ||
+			base.PC["4"] != '高职高专批' ||
+			base.KL["1"] != '文科综合' || base.KL["5"] != '理科综合'
+			)
+			error('需要更新源码: base 变动')
 
 		history = { }
 		someEach(cfg.PC, function(pcCode, pc) {
@@ -361,7 +380,8 @@ const cmds = {
 				// 非本科批次变动较大, 不计算 planless
 				total;
 			if (!task) {
-				writeFile('./data/plans.json', plans)
+				// 最后调整比例因子
+				hisScale(history)
 				writeFile('./data/history.json', history)
 
 				total = Object.keys(history.renamed).length
@@ -375,64 +395,61 @@ const cmds = {
 			}
 
 			get(task[2], function(doc) {
-				let want = '院校代号,院校名称,计划,实际投档人数,投档最低分',
-					row,
+				let row,
 					keys = [];
-				doc.querySelectorAll('tr').forEach(
-					function(tr) {
-						if (!keys.length) {
-							tr.querySelectorAll('td').forEach(function(td, i) {
-								let text = td.textContent.replace(/\s/g, '');
-								keys.push(text)
-							})
-
-							if (keys.slice(0, 5).join(',') != want)
-								keys = []
-							return
-						}
-						row = []
+				doc.querySelectorAll('tr').forEach(function(tr) {
+					if (!keys.length) {
 						tr.querySelectorAll('td').forEach(function(td, i) {
-							if (i > 4) return
-							let text = td.textContent.trim()
-							row.push(
-								i == 0 && text ||
-								i == 1 && normal(text) ||
-								parseInt(text) || 0
-							)
+							let text = td.textContent.replace(/\s/g, '');
+							keys.push(text)
 						})
-
-						if (!row.length || !row[0]) return
-
-						if (plans[row[0]] &&
-							plans[row[0]][PC] && plans[row[0]][PC][KL]) {
-							plans[row[0]][PC][KL].history = row[4]
-						} else {
-							if (!ignore)
-								history.planless[row[0]] = row[1]
-							return
-						}
-
-						if (schools[row[0]]['院校名称'] != row[1]) {
-							history.Renamed[row[0]] = {
-								old: row[1],
-								now: schools[row[0]]['院校名称']
-							}
-						}
-
-						// 投档最低分, 院校代号...
-						dist.every(function(a) {
-							if (a[0] == row[4]) {
-								a.push(row[0])
-								return false
-							}
-							return true
-						}) && dist.push([row[4], row[0]])
+						if (keys.slice(0, 5).join(',') != want)
+							keys = []
+						return
 					}
-				)
+					row = []
+					tr.querySelectorAll('td').forEach(function(td, i) {
+						if (i > 4) return
+						let text = td.textContent.trim()
+						row.push(
+							i == 0 && text ||
+							i == 1 && normal(text) ||
+							parseInt(text) || 0
+						)
+					})
+
+					if (!row.length || !row[0] ||
+						!row[4]// 过滤掉无分数的
+						) return
+
+
+					if (!plans[row[0]] || !plans[row[0]][PC] ||
+						!plans[row[0]][PC][KL]) {
+						if (!ignore)
+							history.planless[row[0]] = row[1]
+						return
+					}
+
+
+					if (schools[row[0]]['院校名称'] != row[1]) {
+						history.renamed[row[0]] = {
+							old: row[1],
+							now: schools[row[0]]['院校名称']
+						}
+					}
+
+					dist.push([
+						row[4], // 分数
+						row[0], // 院校代号
+						row[2], // 计划人数
+						1       // 比例因子, 当同批次多条记录时适用
+					])
+				})
 
 				if (!keys.length)
-					error('Need to update history')
+					error('需要更新源码: 目标页面结构变化')
 
+				// 按分数排序
 				dist.sort(function(a, b) {
 					return a[0] < b[0] && 1 || -1
 				})
@@ -441,29 +458,47 @@ const cmds = {
 			})
 		}
 	},
-	name: function(...codes) {
-		// 根据四位院校代码输出院校名称
-		school(schools, codes, function(s, obj) {
-			if (obj) {
-				echo('[' + s + ']' + obj['院校名称'] +
-					' ' + paths.PCList + '?YXDH=' + s)
+	plan: function(pc, kl, ...codes) {
+		let c = 0,
+			url = paths.PCList + '?YXDH='
+		// 输出院校招生计划概要
+		if (!pc || !base.PC[pc] ||
+			!kl || !base.KL[kl] || !codes || !codes.length) {
+			echo('必须指定批次, 科类和院校代码')
+			echo(base.PC)
+			echo(base.KL)
+			return
+		}
+
+		school(codes, function(s, obj) {
+			let o = obj && plans[s] && plans[s][pc] && plans[s][pc][kl];
+			if (o) {
+				c += o.total
+				echo(`${o.total}	[${s}]${obj['院校名称']} ${url}${s}`)
 			}
 		})
+		echo()
+		echo(`${c}	[${pc}]${base.PC[pc]} [${kl}]${base.KL[kl]}`)
 	},
-	rank: genRank, // 按科类生成志愿填报排行
+	rank: predict, // 按科类生成志愿填报排行
 	hope: function(
-		kl,    // 科类代码
-		actual // 总分
+		pc,     // 批次代号
+		kl,     // 科类代号
+		actual, // 总分
+		extend  // 扩展档差 10 - 30, 默认 10
 	) {
-		// 输出科类(kl) 和总分(fen) 在 rank.json 中上下 10 档(分)的院校
+		// 在 rank[kl] 中查找并返回总分(actual) 上下 extend 档(分) 的数组
+		// 如果 kl 不存在返回 null
 
-		let rank = hope(kl, actual);
-		if (!rank) error('未定义科类代号 ' + kl);
-		rank.forEach(function(a) {
-			echo(a[0] + '\t' + a[1])
+		let hops = hope(pc, kl, actual, extend);
+		let url = paths.PCList + '?YXDH=';
+		if (!hops) error(`未定义的批次代号 ${pc} 或科类代号 ${kl}`);
+		hops.forEach(function(a) {
+			echo(`${a[0]}	竞争考生 ${a[2]} 优势考生 ${a[3]}`)
 			a.forEach(function(code, i) {
-				if (i < 2) return
-				echo('\t' + paths.PCList + '?YXDH=' + code + ' ' +
+				if (i < 4) return
+
+				echo(`	${url}${code} ` +
 					(schools[code] && schools[code]['院校名称'] || ''))
 			})
 		})
@@ -488,39 +523,165 @@ function someEach(obj, callback, thisArg) {
 	return some
 }
 
-function genRank() {
-	// 按科类生成志愿填报排行
-	let fen = require('./data/fen.json');
-	Object.keys(fen).forEach(function(kl) {
-		let top = fen[kl],
-			min = top[top.length - 1][0];
+function hisScale(history) {
+	// 计算 history[PC][KL][i][3] 比例因子
+	// 参数 history 是已经排序的
+	//
+	// 算法
+	//
+	//     先统计同一个院校计划招生总是 S, 限本科批次, 分批次, 分科类
+	//     然后每条记录所占的比例数就是: 计划招生/S
 
-		// 从所有历史批次中选出分值范围内的院校
-		someEach(history, function(o, pc) {
-			if (!parseInt(pc)) return
-			someEach(o, function(a, k) {
-				if (k != kl) return
-				a.some(function(a, i) {
-					i = a[0]
-					if (i < min) return true
-					// 先按分数段挑出院校
-					// 因为去年的批次不一定和今年一样
-					i = search(top, function(a) {
-						return a[0] > i && 1 || a[0] < i && -1 || 0
-					})
+	someEach(history, function(o, pc) {
+		if (pc != '1' && pc != '2') return
+		someEach(o, function(a, kl) {
+			if (kl != '1' && kl != '5') return
+			let codes = { }
+			a.forEach(function(a, i) {
+				let yx = a[1];
+				this[yx] = this[yx] || []
+				if (!this[yx].length)
+					this[yx].push(a[2])
+				else
+					this[yx][0] += a[2]
+				this[yx].push(i)
+			}, codes)
 
-					a.forEach(function(code, i) {
-						if (i && this.indexOf(code, 2) == -1)
-							this.push(code)
-					}, top[i])
-				})
-			})
-		})
-		fen[kl] = top.filter(function(a) {
-			return a.length > 2
+			someEach(codes, function(a) {
+				if (a.length == 2) return
+				for (let i = 1; i < a.length; i++) {
+					this[a[i]][3] = this[a[i]][2] / a[0]
+				}
+			}, a)
 		})
 	})
-	writeFile('./data/rank.json', fen)
+}
+
+function echoPredict(rank) {
+	echo()
+	echo('预测')
+	let prediction = { total: 0 };
+
+	someEach(rank, function(o, pc) {
+		this[pc] = { total: 0 }
+		someEach(o, function(a, kl) {
+			this[kl] = a.reduce(function(hj, a) {
+				return hj + a[2]
+			}, 0)
+			this.total += this[kl]
+		}, this[pc])
+
+		this.total += this[pc].total
+	}, prediction)
+
+	someEach(prediction, function(o, pc) {
+		if (pc == 'total') return
+		echo()
+		echo(`	${o.total}	[${pc}]${base.PC[pc]}`)
+		someEach(o, function(o, kl) {
+			if (kl !== 'total')
+				echo(`		${o}	[${kl}]${base.KL[kl]}`)
+		})
+	})
+
+}
+
+function predict() {
+	// 投档预测
+	// {批次代号: {科别代号:
+	//     [[预测投档线,累计考生, 竞争考生, 优势考生, 院校代号...]...]
+	// }}
+	//
+	let fens = require('./data/fen.json'),
+		xian = require('./data/shengkong.json'),
+		rank = { '1': { '1': [], '5': [] }, '2': { '1': [], '5': [] } };
+
+	if (base.PC["1"] != '本科一批' || base.PC["2"] != '本科二批' ||
+		base.KL["1"] != '文科综合' || base.KL["5"] != '理科综合'
+		)
+		error('需要更新源码: base 变动');
+
+	let i = 0,
+		total = 0,
+		winner = 0;
+
+	run('1', '1');
+	run('2', '1');
+
+	i = 0;
+	total = 0;
+	winner = 0;
+	run('1', '5');
+	run('2', '5');
+
+	// echo(rank["1"]["1"][rank["1"]["1"].length - 1])
+	// echo(rank["2"]["1"][0])
+
+	// echo(rank["1"]["5"][rank["1"]["5"].length - 1])
+	// echo(rank["2"]["5"][0])
+	echoPredict(rank)
+
+	writeFile('./data/rank.json', rank)
+
+	function run(pc, kl) {
+		let fen = fens[kl],
+			min = xian[pc][kl],
+			h = 0,
+			his = history[pc] && history[pc][kl],
+			tops = rank[pc][kl],
+			top = [0, 0, 0, 0],
+			codes = [];
+
+		if (!min) error('数据缺失: 省录取控制分数线')
+		if (!his || !fen) error('数据缺失: 历史数据')
+
+		while (h < his.length && i < fen.length && fen[i][0] >= min) {
+			let racer = 0,
+				v = his[h][0];
+
+			while (v == his[h][0]) {
+				let code = his[h][1],
+					o = plans[code];
+				o = o && o[pc];
+				o = o && o[kl];
+
+				if (o && o.total) {
+					racer += Math.round(his[h][3] * o.total)
+					top.push(code)
+				}
+				h++
+			}
+
+			// 考生不够, 降投档线
+			while (i < fen.length && fen[i][1] < total + racer + winner) {
+				i++;
+				if (i == fen.length || fen[i][0] < min) {
+					i--;
+					break
+				}
+			}
+
+			total += racer + winner
+
+			tops.push(top)
+			top[0] = fen[i][0]
+			top[3] = winner
+			if (fen[i][1] >= total) {
+				top[1] = total
+				top[2] = racer + winner
+				winner = fen[i][1] - total
+			} else {
+				winner = total - fen[i][1]
+				top[1] = fen[i][1]
+				top[2] = racer - winner
+				total = fen[i][1]
+				winner = 0
+			}
+			top = [0, 0, 0, 0]
+			i++
+		}
+	}
+
 }
 
 function bufToQuery(buf) {
