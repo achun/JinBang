@@ -449,6 +449,10 @@ const cmds = {
 			if (o) {
 				c += o.total
 				echo(`${o.total}	[${s}]${obj['院校名称']} ${url}${s}`)
+				someEach(plans[s][pc][kl], function(o, zy) {
+					if (zy == 'total') return
+					echo(`	${o.total}	${o.name} ${o.note}`)
+				})
 			}
 		})
 		echo()
