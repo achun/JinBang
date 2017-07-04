@@ -14,12 +14,13 @@ Command
 
   valid              备用, 简单的检查非法 UTF-8 编码字符 � . 原因不明.
 
-  total              分批次, 科类统计生成招生计划 (data/total.json)
+  total              生成招生计划 (data/total.json)
 
-  count              输出当前数据统计信息, 可辅助排错
+  rank               生成志愿填报排行 (data/rank.json)
+
+  summary            输出数据概要, 可辅助排错
 
   plan <pc kl N>     输出指定批次 pc 科类 kl 和院校(四位代码)的招生计划概要
 
-  rank               按科类生成志愿填报排行 (data/rank.json)
-
-  hope <pc kl fen N> 输出批次,科类和总分(fen) 在 rank.json 中上下 N 档(分)的院校
+  hope <pc kl v U L> 输出批次(pc)科类(kl)总分(v) 上 U 档 下 L 档的院校
+                     U 和 L 最小值 0, 最大值 30, 缺省 U 10, L 20

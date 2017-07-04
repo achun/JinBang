@@ -134,7 +134,7 @@ const cmds = {
 			})
 		}
 	},
-	count: function() {
+	summary: function() {
 		// 输出统计信息,
 		let total = 0,
 			problem = [],
@@ -157,8 +157,7 @@ const cmds = {
 
 		echo('院校\t' + KeysPlans.length + ', 省市 ' + total)
 
-		echo('更名\t' + Object.keys(history.renamed).length)
-		echo('无计划\t' + Object.keys(history.planless).length)
+
 
 		if (!codes)
 			problem.push('base.schools 缺失, 需要更新 plans')
@@ -171,59 +170,6 @@ const cmds = {
 
 			if (KeysPlans.length != KeysSchools.length)
 				problem.push('schools 院校数为 ' + KeysSchools.length)
-		}
-		total = 0
-		let pcs = [],
-			kls = [],
-			xys = [];
-		KeysPlans = [] // 复用, 表示未囊括的院校
-		someEach(history, function(o, pc) {
-			if (!parseInt(pc)) return
-			if (!base.PC[pc]) {
-				pcs.push(pc)
-				return
-			}
-			someEach(o, function(a, kl) {
-				if (!base.KL[kl]) {
-					kls.indexOf(kl) == -1 && kls.push(kl)
-					return
-				}
-				a.forEach(function(a) {
-					let code = a[1];
-
-					if (!plans[code])
-						xys.indexOf(code) == -1 && xys.push(code)
-					else
-						(!plans[code][pc] || !plans[code][pc][kl]) &&
-						KeysPlans.indexOf(code) == -1 &&
-						KeysPlans.push(code)
-
-				})
-			})
-		})
-
-		if (KeysPlans.length) {
-			echo('历史数据未囊括的院校 ' + KeysPlans.length)
-			while (true) {
-				console.log(KeysPlans.slice(0, 16).join(' '))
-				KeysPlans = KeysPlans.slice(16)
-				if (!KeysPlans.length) break
-			}
-		}
-
-		if (pcs.length)
-			problem.push('历史数据中有未知批次 ' + pcs.join(' '))
-		if (kls.length)
-			problem.push('历史数据中有未知科类 ' + kls.join(' '))
-		if (xys.length)
-			problem.push('历史数据中有未知院校 ' + xys.join(' '))
-
-		if (problem.length) {
-			echo('问题:')
-			problem.forEach(function(s) {
-				echo('\t' + s)
-			})
-			process.exit(1)
 		}
 
 		let xian = require('./data/shengkong.json');
@@ -243,6 +189,16 @@ const cmds = {
 				}
 			}, o)
 		})
+
+		if (problem.length) {
+			echo('问题:')
+			problem.forEach(function(s) {
+				echo('\t' + s)
+			})
+			process.exit(1)
+		}
+
+		echoHis(history)
 
 		echo()
 		echo('考生省控线分段(非累计)')
@@ -368,6 +324,7 @@ const cmds = {
 			})
 		})
 		history.planless = { }
+		history.newplan = { }
 		history.renamed = { }
 
 		step()
@@ -379,20 +336,26 @@ const cmds = {
 				ignore = task && PC != '1' && PC != '2',
 				// 非本科批次变动较大, 不计算 planless
 				total;
+
 			if (!task) {
 				// 最后调整比例因子
 				hisScale(history)
 				writeFile('./data/history.json', history)
-
-				total = Object.keys(history.renamed).length
-				if (total) echo('更名 ' + total)
-
-				total = Object.keys(history.planless).length
-				if (total) echo('无计划  ' + total)
-
+				echoHis(history)
 				echo('done')
 				return
 			}
+
+			history.newplan[PC] = { }
+			history.newplan[PC][KL] = { };
+			let newplan = history.newplan[PC][KL],
+				codes = [];// 计算 pc, kl 所有院校, 剔除后就是新增的院校
+
+			someEach(plans, function(o, code) {
+				o = o[PC]
+				if (o && o[KL] && o[KL].total)
+					codes.push(code)
+			})
 
 			get(task[2], function(doc) {
 				let row,
@@ -422,7 +385,7 @@ const cmds = {
 						!row[4]// 过滤掉无分数的
 						) return
 
-
+					// 往年有计划, 今年无计划
 					if (!plans[row[0]] || !plans[row[0]][PC] ||
 						!plans[row[0]][PC][KL]) {
 						if (!ignore)
@@ -430,13 +393,19 @@ const cmds = {
 						return
 					}
 
-
-					if (schools[row[0]]['院校名称'] != row[1]) {
+					// 院校更名
+					let name = schools[row[0]]['院校名称'];
+					if (name != row[1] && !name.startsWith(row[1]) &&
+						!row[1].startsWith(name)) {
 						history.renamed[row[0]] = {
 							old: row[1],
-							now: schools[row[0]]['院校名称']
+							now: name
 						}
 					}
+					// 剔除计划的, 就是新增的
+					i = codes.indexOf(row[0])
+					if (i != -1)
+						codes[i] = null
 
 					dist.push([
 						row[4], // 分数
@@ -453,7 +422,11 @@ const cmds = {
 				dist.sort(function(a, b) {
 					return a[0] < b[0] && 1 || -1
 				})
-
+				codes.forEach(function(c) {
+					if (!c) return
+					newplan[c] = plans[c][PC][KL].total
+				}, newplan)
+				// 计算新增院校
 				step()
 			})
 		}
@@ -485,16 +458,17 @@ const cmds = {
 		pc,     // 批次代号
 		kl,     // 科类代号
 		actual, // 总分
-		extend  // 扩展档差 10 - 30, 默认 10
+		U,      // 档差上界 0 - 30, 默认 10
+		L       // 档差下界 0 - 30, 默认 20
 	) {
-		// 在 rank[kl] 中查找并返回总分(actual) 上下 extend 档(分) 的数组
-		// 如果 kl 不存在返回 null
+		// 在 rank[pc][kl] 中查找并返回总分 上 U 档 下 L 档的院校
+		// 如果 rank[pc][kl] 不存在返回 null
 
-		let hops = hope(pc, kl, actual, extend);
+		let hops = hope(pc, kl, actual, U, L);
 		let url = paths.PCList + '?YXDH=';
 		if (!hops) error(`未定义的批次代号 ${pc} 或科类代号 ${kl}`);
 		hops.forEach(function(a) {
-			echo(`${a[0]}	竞争考生 ${a[2]} 优势考生 ${a[3]}`)
+			echo(`${a[0]}	竞争考生 ${a[2]} 优势考生 ${a[3]} 上年投档线 ${a[1]}`)
 			a.forEach(function(code, i) {
 				if (i < 4) return
 
@@ -553,6 +527,36 @@ function hisScale(history) {
 					this[a[i]][3] = this[a[i]][2] / a[0]
 				}
 			}, a)
+		})
+	})
+}
+
+function echoHis(history) {
+	let total = Object.keys(history.renamed).length
+	if (total) echo() || echo('更名	' + total)
+
+
+	total = Object.keys(history.planless).length
+	if (total) echo() || echo('无计划	' + total)
+
+	echo() || echo('新计划')
+	someEach(history.newplan, function(o, pc) {
+		total = 0
+		someEach(o, function(o, kl) {
+			someEach(o, function(v, id) {
+				total += v
+			})
+		})
+		echo() || echo(`	${total}	[${pc}]${base.PC[pc]}`)
+		someEach(o, function(o, kl) {
+			total = 0
+			someEach(o, function(v, id) {
+				total += v
+			})
+			echo(`		${total}	[${kl}]${base.KL[kl]}`)
+			someEach(o, function(v, id) {
+				echo(`			${v}	[${id}]${schools[id]['院校名称']}`)
+			})
 		})
 	})
 }
@@ -639,44 +643,48 @@ function predict() {
 			let racer = 0,
 				v = his[h][0];
 
-			while (v == his[h][0]) {
+			// 投档线相同, 收集到一起
+			while (h < his.length && v == his[h][0]) {
 				let code = his[h][1],
 					o = plans[code];
 				o = o && o[pc];
 				o = o && o[kl];
 
 				if (o && o.total) {
-					racer += Math.round(his[h][3] * o.total)
+					racer += his[h][3] * o.total
 					top.push(code)
 				}
 				h++
 			}
 
-			// 考生不够, 降投档线
-			while (i < fen.length && fen[i][1] < total + racer + winner) {
-				i++;
-				if (i == fen.length || fen[i][0] < min) {
-					i--;
-					break
+			// 计划招生
+			racer = Math.round(racer)
+			total += racer
+
+			// 计划多, 考生少, 投档线降
+			if (winner < racer) {
+				while (i < fen.length && fen[i][1] < total) {
+					i++;
+					if (i == fen.length || fen[i][0] < min) {
+						i--;
+						break
+					}
 				}
-			}
-
-			total += racer + winner
-
-			tops.push(top)
-			top[0] = fen[i][0]
-			top[3] = winner
-			if (fen[i][1] >= total) {
-				top[1] = total
-				top[2] = racer + winner
+				top[3] = winner
 				winner = fen[i][1] - total
 			} else {
-				winner = total - fen[i][1]
-				top[1] = fen[i][1]
-				top[2] = racer - winner
-				total = fen[i][1]
+				// 考生多, 计划少, 投档线升
+				i && i--
+				top = tops.pop() || [0, 0, 0, winner]
 				winner = 0
 			}
+
+			top[0] = fen[i][0]
+			top[1] = v
+			top[2] += racer
+
+			tops.push(top)
+
 			top = [0, 0, 0, 0]
 			i++
 		}

@@ -4,7 +4,7 @@
   "description": "河南高考数据汇总",
   "main": "index.js",
   "scripts":{
-    "test": "node index.js count"
+    "summary": "node index.js summary > data/summary.txt"
   },
   "repository": "https://github.achun/JinBang",
   "author": "YU HengChun <achun.shx@qq.com>",
