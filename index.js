@@ -346,10 +346,11 @@ const cmds = {
 				return
 			}
 
-			history.newplan[PC] = { }
-			history.newplan[PC][KL] = { };
-			let newplan = history.newplan[PC][KL],
+			let newplan = { },
 				codes = [];// 计算 pc, kl 所有院校, 剔除后就是新增的院校
+
+			history.newplan[PC] = { }
+			history.newplan[PC][KL] = newplan;
 
 			someEach(plans, function(o, code) {
 				o = o[PC]
@@ -422,11 +423,11 @@ const cmds = {
 				dist.sort(function(a, b) {
 					return a[0] < b[0] && 1 || -1
 				})
-				codes.forEach(function(c) {
-					if (!c) return
-					newplan[c] = plans[c][PC][KL].total
-				}, newplan)
 				// 计算新增院校
+				codes.forEach(function(c) {
+					if (c)
+						newplan[c] = plans[c][PC][KL].total
+				})
 				step()
 			})
 		}
@@ -633,8 +634,7 @@ function predict() {
 			h = 0,
 			his = history[pc] && history[pc][kl],
 			tops = rank[pc][kl],
-			top = [0, 0, 0, 0],
-			codes = [];
+			top = [0, 0, 0, 0];
 
 		if (!min) error('数据缺失: 省录取控制分数线')
 		if (!his || !fen) error('数据缺失: 历史数据')
@@ -675,7 +675,11 @@ function predict() {
 			} else {
 				// 考生多, 计划少, 投档线升
 				i && i--
+				let codes = top.slice(4)
 				top = tops.pop() || [0, 0, 0, winner]
+				codes.forEach(function(c) {
+					top.push(c)
+				}, top)
 				winner = 0
 			}
 
