@@ -96,6 +96,41 @@ const cmds = {
 			})
 		}
 	},
+	search: function(pc, kl, key, U, L) {
+		// 在 plans.json 中搜索 批次, 科类含有 key 的专业
+		// 输出院校代码以及 rank.json 中的投档线情况, 可能有多档
+		// U, L 为投档线范围过滤
+		let url = paths.PCList + '?YXDH=';
+		if (!pc || !kl || !key) return
+		someEach(plans, function(o, code) {
+			if (!o[pc] || !o[pc][kl]) return
+			let names = []
+			someEach(o[pc][kl], function(o, zy) {
+				if (!o.name || o.name.indexOf(key) == -1) return
+				if (names.indexOf(o.name) == -1)
+					names.push(o.name)
+			})
+			if (!names.length) return
+			let tops = rank[pc] && rank[pc][kl];
+			let dang = [];
+			if (tops)
+				tops.forEach(function(a) {
+					if (a.indexOf(code) < 4) return
+					if (U && a[0] > U || L && a[0] < L) return
+					dang.push(`	预测 ${a[0]}	竞争考生 ${a[2]} 优势考生 ${a[3]} 上年投档线 ${a[1]}`)
+				})
+			if (!dang.length) return
+
+			echo(`[${code}]${schools[code]['院校名称']}`)
+			echo(`	${url}${code}`)
+			dang.forEach(function(s) {
+				echo(s)
+			})
+			names.forEach(function(name) {
+				echo(`	${name}`)
+			})
+		})
+	},
 	plans: function(
 		...codes // 4 位院校代号, 缺省为全部院校
 	) {

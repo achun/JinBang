@@ -4,25 +4,27 @@ Usage
 
 Command
 
-  help               显示此帮助信息
+  help                  显示此帮助信息
 
-  base               抓取基本信息, 如果是新一年, 这应该是第一个要执行的
+  base                  抓取基本信息, 如果是新一年, 这应该是第一个要执行的
 
-  plans [N...]       抓取高考招生计划, 参数为四位院校代号, 缺省为全部院校
+  plans [N...]          抓取高考招生计划, 参数为四位院校代号, 缺省为全部院校
 
-  history            抓取上年平行投档线
+  history               抓取上年平行投档线
 
-  valid              备用, 简单的检查非法 UTF-8 编码字符 � . 原因不明.
+  valid                 备用, 简单的检查非法 UTF-8 编码字符 � . 原因不明.
 
-  total              生成招生计划 (data/total.json)
+  total                 生成招生计划 (data/total.json)
 
-  rank               生成志愿填报排行 (data/rank.json)
+  rank                  生成志愿填报排行 (data/rank.json)
 
-  summary            输出数据概要, 可辅助排错
+  summary               输出数据概要, 可辅助排错
 
-  plan <pc kl N>     输出指定批次 pc 科类 kl 和院校(四位代码)的招生计划概要
+  plan <pc kl N>        输出指定批次 pc 科类 kl 和院校(四位代码)的招生计划概要
 
-  hope <pc kl v U L> 输出批次(pc)科类(kl)总分(v) 上 U 档 下 L 档的院校
-                     U 和 L 最小值 0, 最大值 30, 缺省 U 10, L 20
+  hope <pc kl v U L>    输出批次(pc)科类(kl)总分(v) 上 U 档 下 L 档的院校
+                        U 和 L 最小值 0, 最大值 30, 缺省 U 10, L 20
 
-第1次保存时间：2017年07月04日 17:53:33，校验值：1195960030350C105037BE4E76BD813D，还可以修改2次。
+  search <pc kl key U L>在 plans.json 中搜索 批次, 科类含有 key 的专业
+                        输出院校代码以及 rank.json 中的投档线情况, 可能有多档
+                        U, L 为预测投档线范围过滤
