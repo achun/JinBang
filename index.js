@@ -458,7 +458,7 @@ const cmds = {
 		echo()
 		echo(`${c}	[${pc}]${base.PC[pc]} [${kl}]${base.KL[kl]}`)
 	},
-	rank: predict, // 按科类生成志愿填报排行
+	rank: predict,
 	hope: function(
 		pc,     // 批次代号
 		kl,     // 科类代号
@@ -601,6 +601,7 @@ function predict() {
 	//     [[预测投档线,累计考生, 竞争考生, 优势考生, 院校代号...]...]
 	// }}
 	//
+
 	let fens = require('./data/fen.json'),
 		xian = require('./data/shengkong.json'),
 		rank = { '1': { '1': [], '5': [] }, '2': { '1': [], '5': [] } };
@@ -612,15 +613,46 @@ function predict() {
 
 	let i = 0,
 		total = 0,
-		winner = 0;
+		winner = 0,
+		fen = fens['1'];
 
+	let rate = search(fen, function(a) {
+		return a[0] - xian['1']['1']
+	})
+
+	let sum = fen[rate][1]// 累计数量
+
+	rate = totals['1']['1'] / sum
+	echo(rate)
 	run('1', '1');
+
+	rate = search(fen, function(a) {
+		return a[0] - xian['2']['1']
+	})
+	sum = fen[rate][1] - sum
+	rate = totals['2']['1'] / (sum + winner)
+	echo(rate)
 	run('2', '1');
 
 	i = 0;
 	total = 0;
 	winner = 0;
+
+	fen = fens['5']
+	rate = search(fen, function(a) {
+		return a[0] - xian['1']['5']
+	})
+	sum = fen[rate][1]
+	rate = totals['1']['5'] / sum
+	echo(rate)
 	run('1', '5');
+
+	rate = search(fen, function(a) {
+		return a[0] - xian['2']['5']
+	})
+	sum = fen[rate][1] - sum
+	rate = totals['2']['5'] / (sum + winner)
+	echo(rate)
 	run('2', '5');
 
 	// echo(rank["1"]["1"][rank["1"]["1"].length - 1])
@@ -633,8 +665,7 @@ function predict() {
 	writeFile('./data/rank.json', rank)
 
 	function run(pc, kl) {
-		let fen = fens[kl],
-			min = xian[pc][kl],
+		let min = xian[pc][kl],
 			h = 0,
 			his = history[pc] && history[pc][kl],
 			tops = rank[pc][kl],
@@ -667,7 +698,7 @@ function predict() {
 
 			// 计划多, 考生少, 投档线降
 			if (winner < racer) {
-				while (i < fen.length && fen[i][1] < total) {
+				while (i < fen.length && Math.round(fen[i][1] * rate) < total) {
 					i++;
 					if (i == fen.length || fen[i][0] < min) {
 						i--;
@@ -675,7 +706,7 @@ function predict() {
 					}
 				}
 				top[3] = winner
-				winner = fen[i][1] - total
+				winner = Math.round(fen[i][1] * rate) - total
 			} else {
 				// 考生多, 计划少, 投档线升
 				i && i--
