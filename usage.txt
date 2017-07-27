@@ -21,6 +21,7 @@ Command
   summary               输出数据概要, 可辅助排错
 
   plan <pc kl N>        输出指定批次 pc 科类 kl 和院校(四位代码)的招生计划概要
+                        pc, kl 值为 - 表示全部的批次或科类
 
   hope <pc kl v U L>    输出批次(pc)科类(kl)总分(v) 上 U 档 下 L 档的院校
                         U 和 L 最小值 0, 最大值 30, 缺省 U 10, L 20

@@ -468,30 +468,54 @@ const cmds = {
 		}
 	},
 	plan: function(pc, kl, ...codes) {
-		let c = 0,
-			url = paths.PCList + '?YXDH='
+		let url = paths.PCList + '?YXDH='
 		// 输出院校招生计划概要
-		if (!pc || !base.PC[pc] ||
-			!kl || !base.KL[kl] || !codes || !codes.length) {
-			echo('必须指定批次, 科类和院校代码')
+		if (!pc || pc != '-' && !base.PC[pc] ||
+			!kl || kl != '-' && !base.KL[kl] ||
+			!codes || !codes.length) {
+			echo('请选择批次, 科类和院校代码')
 			echo(base.PC)
 			echo(base.KL)
 			return
 		}
 
-		school(codes, function(s, obj) {
-			let o = obj && plans[s] && plans[s][pc] && plans[s][pc][kl];
-			if (o) {
-				c += o.total
-				echo(`${o.total}	[${s}]${obj['院校名称']} ${url}${s}`)
-				someEach(plans[s][pc][kl], function(o, zy) {
-					if (zy == 'total') return
-					echo(`	${o.total}	${o.name} ${o.note}`)
+		school(codes, function(s, school) {
+			let o = school && plans[s];
+			if (!o) return
+			echo(`[${s}]${school['院校名称']} ${url}${s}`)
+			let c = 0
+			if (pc == '-')
+				someEach(o, function(o, pc) {
+					if (base.PC[pc])
+						c += echoPC(pc, o, kl)
 				})
-			}
+			else if (o[pc])
+				c += echoPC(pc, o[pc], kl)
+			echo(`	${c}	[${pc}] 批次[${kl}]科类合计`)
 		})
-		echo()
-		echo(`${c}	[${pc}]${base.PC[pc]} [${kl}]${base.KL[kl]}`)
+
+		function echoPC(pc, o, kl) {
+			let c = 0
+			echo(`	${o.total}	[${pc}]${base.PC[pc]}`)
+			if (kl == '-')
+				someEach(o, function(o, kl) {
+					if (base.KL[kl])
+						c += echoKL(kl, o)
+				})
+			else if (o[kl])
+				c += echoKL(kl, o[kl])
+
+			return c
+		}
+
+		function echoKL(kl, o) {
+			echo(`		${o.total}	[${kl}]	${base.KL[kl]}`)
+			someEach(o, function(o, zy) {
+				if (zy != 'total')
+					echo(`			${o.total}	${o.name} ${o.note}`)
+			})
+			return o.total
+		}
 	},
 	rank: predict,
 	hope: function(
